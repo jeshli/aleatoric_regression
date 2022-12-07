@@ -38,7 +38,7 @@ class Exponential_Variance(nn.Module):
     def __init__(self,N_Features):
         super(Exponential_Variance, self).__init__()
     
-        self.mu = nn.Linear(N_Features,1)        
+        self.mu = nn.LineExponentialar(N_Features,1)        
         self.mu.weight.data.fill_(0)
         self.mu.bias.data.fill_(0)
     
@@ -53,6 +53,23 @@ class Exponential_Variance(nn.Module):
         return mu, sigma
 
 
+
+class No_Variance(nn.Module):
+    
+    def __init__(self,N_Features):
+        super(No_Variance, self).__init__()
+    
+        self.mu = nn.Linear(N_Features,1)        
+        self.mu.weight.data.fill_(0)
+        self.mu.bias.data.fill_(0)
+    
+    def forward(self, Features):
+        
+        mu = self.mu(Features)
+        return mu, torch.zeros(Features.shape[0],1)
+
+
+
     
 class Aleatoric_Regression_Model:
     
@@ -62,11 +79,16 @@ class Aleatoric_Regression_Model:
     def loss(self,u,s,y):
         L = ( ( (u - y)**2 ) / s**2 ).mean() + torch.log( s**2 ).mean()
         return L
-        
+      
+    def MSE_loss(self,u,y):
+        L = ( ( (u - y)**2 ) ).mean()
+        return L        
     
-    def fit(self,X,Y,exponential=False,verbose=False,epsilon=1e-6,lr=1e-3,epochs=250,show_at=100):        
+    def fit(self,X,Y,exponential=False,no_variance=False,verbose=False,epsilon=1e-6,lr=1e-3,epochs=250,show_at=100):        
         if exponential:
             self.model = Exponential_Variance(X.shape[1])
+        elif no_variance:
+            self.model = No_Variance(X.shape[1])            
         else:
             self.model = Linear_Variance(X.shape[1])
             
@@ -78,7 +100,10 @@ class Aleatoric_Regression_Model:
             optimizer.zero_grad()
             u,s = self.model.forward(X)
             #print(u,s,Y)
-            error = self.loss(u.squeeze(-1),s.squeeze(-1),Y.squeeze(-1))  
+            if no_variance:
+                error = self.MSE_loss(u.squeeze(-1),Y.squeeze(-1))  
+            else:
+                error = self.loss(u.squeeze(-1),s.squeeze(-1),Y.squeeze(-1))  
             #print(error)
 
             if epoch % show_at == 0: 

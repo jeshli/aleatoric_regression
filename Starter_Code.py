@@ -15,8 +15,11 @@ import Aleatoric_Model
 import matplotlib.pyplot as plt
 
 
+no_variance=False
+lr=1e-1
 
-Synthetic_Demo = True
+Synthetic_Demo = False
+Cubic = False
 
 if Synthetic_Demo:
     DF = pd.DataFrame()
@@ -28,29 +31,43 @@ if Synthetic_Demo:
     y /= y.std()
     log_Cycle_Burn_Data = y
     Cycle_Burn_Data = np.exp(log_Cycle_Burn_Data)
-    DF['Cycles Burn'] = Cycle_Burn_Data
+    DF['Cycles Burned'] = Cycle_Burn_Data
 
+
+
+DF = pd.concat([pd.read_csv('Dates.csv',delimiter='|'), pd.read_csv('CyclesBurned.csv',delimiter='|')],axis=1)
+DF['Cycles Burned'] = DF['Cycles Burned'].str.replace(',','')
+DF['Cycles Burned'] = pd.to_numeric(DF['Cycles Burned'].values)
+DF['Date'] = pd.to_datetime(DF['Date'])
+DF = DF[DF['Date']>'2022-02-01']  #filter out an outlier spike                  142%    2%
+#DF = DF[DF['Date']<'2022-10-01']                                               116%  -92%
+#DF = DF[DF['Date']>'2022-10-01'] #filter out to chapter temporal shift         632%   42%  
+DF.reset_index(inplace=True,drop=True)
 
 ###############################################################################
 
-
-
-Cycle_Burn_Data = DF['Cycles Burn'].values
+Cycle_Burn_Data = DF['Cycles Burned'].values
 Time_Data = DF['Date']
 t = ((Time_Data - Time_Data[0]).dt.days / 365).values
 log_Cycle_Burn_Data  = np.log(Cycle_Burn_Data)
-
-
-
 y = log_Cycle_Burn_Data
-Y = torch.from_numpy(y).float().unsqueeze(-1)
-X = torch.from_numpy(t).float().unsqueeze(-1)
 
+
+#y = np.log(log_Cycle_Burn_Data)
+
+Y = torch.from_numpy(y).float().unsqueeze(-1)
+#X = torch.from_numpy(t).float().unsqueeze(-1)
+
+if Cubic:
+    T = np.concatenate([np.expand_dims(t,-1), np.expand_dims(t,-1)**2, np.expand_dims(t,-1)**3],axis=1)
+else:
+    T = np.expand_dims(t,-1)
+X = torch.from_numpy(T).float()
 
 
 AM = Aleatoric_Model.Aleatoric_Regression_Model()
-AM.fit(X,Y,exponential=False,verbose=True,lr=1e-2,epochs=3000,show_at=500)
-u,s = AM.predict(torch.from_numpy(t).float().unsqueeze(-1))
+AM.fit(X,Y,exponential=False,no_variance=no_variance,verbose=True,lr=lr,epochs=5000,show_at=500)
+u,s = AM.predict(torch.from_numpy(T).float())
 
 
 plt.plot(Time_Data,y)
@@ -76,6 +93,11 @@ plt.ylabel('Cycles Burned')
 plt.legend(['data','mean','2 sigma'])
 plt.show()
 
-
-print('Exponential Rate of Increase YoY', str( np.round(100 * AM.model.mu.weight.item(),2) ) + '%')
-print('Variance Rate of Increase YoY', str( np.round(100 * AM.model.sigma.weight.item(),2) ) + '%')
+if Cubic:
+    print('Exponential Rate of Increase YoY', str( np.round(100 * AM.model.mu.weight.detach().numpy().ravel(),2) ) + '%')
+    if not no_variance:
+        print('Variance Rate of Increase YoY', str( np.round(100 * AM.model.sigma.weight.detach().numpy().ravel(),2) ) + '%')
+else:
+    print('Exponential Rate of Increase YoY', str( np.round(100 * AM.model.mu.weight.item(),2) ) + '%')
+    if not no_variance:
+        print('Variance Rate of Increase YoY', str( np.round(100 * AM.model.sigma.weight.item(),2) ) + '%')
